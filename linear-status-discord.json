@@ -1,0 +1,133 @@
+{
+  "name": "Linear → Discord (Status Changes)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "linear-status",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-status-node",
+      "name": "Linear Webhook Status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "linear-status"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {}
+      },
+      "id": "respond-status-node",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-issue",
+              "leftValue": "={{ $json.body.type }}",
+              "rightValue": "Issue",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "condition-update",
+              "leftValue": "={{ $json.body.action }}",
+              "rightValue": "update",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "condition-state",
+              "leftValue": "={{ $json.body.updatedFrom?.stateId !== undefined ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-status-node",
+      "name": "Filter: Status Changes Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst data = body.data;\nconst updatedFrom = body.updatedFrom || {};\n\n// Issue info\nconst issueUrl = data.url || `https://linear.app/bunluxsa/issue/${data.identifier}`;\nconst issueTitle = data.title || 'Unknown Issue';\nconst issueId = data.identifier || data.id || 'Unknown';\n\n// Status info\nconst newStatus = data.state?.name || 'Unknown';\nconst oldStatusName = updatedFrom.stateName || null;\n\n// Actor (who made the change)\nconst actor = body.actor?.name || 'Someone';\n\n// Status color mapping\nconst statusColors = {\n  'Todo': 9807270,           // #95A5A6 grey\n  'In Progress': 16750848,   // #FF9900 orange  \n  'In Review': 3447003,      // #3498DB blue\n  'Done': 5763719,           // #57F287 green\n  'Cancelled': 10066329,     // #99AAB5 grey\n  'Backlog': 7506394,        // #72757A dark grey\n  'รอ PM Review': 16776960,  // #FFFF00 yellow\n  'กำลังดำเนินการ': 16750848, // orange\n  'เสร็จแล้ว': 5763719,      // green\n};\n\nconst color = statusColors[newStatus] || 8073671; // default purple\n\n// Status emoji mapping\nconst statusEmoji = {\n  'Todo': '⬜',\n  'In Progress': '🟡',\n  'In Review': '🔵',\n  'Done': '✅',\n  'Cancelled': '❌',\n  'Backlog': '📋',\n  'รอ PM Review': '🟡',\n  'กำลังดำเนินการ': '🟡',\n  'เสร็จแล้ว': '✅',\n};\n\nconst emoji = statusEmoji[newStatus] || '🔄';\n\n// Build status change text\nconst statusChange = oldStatusName\n  ? `${oldStatusName} → **${newStatus}**`\n  : `→ **${newStatus}**`;\n\n// Build embed fields\nconst fields = [\n  {\n    name: '🔄 Status Change',\n    value: statusChange,\n    inline: false\n  }\n];\n\nif (data.assignee?.name) {\n  fields.push({\n    name: '👤 Assignee',\n    value: data.assignee.name,\n    inline: true\n  });\n}\n\nif (data.priority !== undefined) {\n  const priorityMap = { 0: 'No Priority', 1: '🔴 Urgent', 2: '🟠 High', 3: '🟡 Medium', 4: '🔵 Low' };\n  fields.push({\n    name: '⚡ Priority',\n    value: priorityMap[data.priority] || 'Unknown',\n    inline: true\n  });\n}\n\nif (data.team?.name) {\n  fields.push({\n    name: '🏷️ Team',\n    value: data.team.name,\n    inline: true\n  });\n}\n\n// Build Discord payload\nconst payload = {\n  embeds: [\n    {\n      author: {\n        name: `${emoji} ${actor} updated status`\n      },\n      title: `${issueId}: ${issueTitle}`,\n      url: issueUrl,\n      color: color,\n      fields: fields,\n      footer: {\n        text: 'Linear • Status Update'\n      },\n      timestamp: new Date().toISOString()\n    }\n  ]\n};\n\nreturn { payload: JSON.stringify(payload) };\n"
+      },
+      "id": "format-status-node",
+      "name": "Format Status Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discordapp.com/api/webhooks/1517885740397232148/NSOAcgyHy_TL7xgz5ffZqcOG57uJSKg4OGDmKnJMgt2uP966tQHrmCu_Jhvmyn8B_954",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "discord-status-node",
+      "name": "Send to Discord bpro-dev",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 360]
+    }
+  ],
+  "connections": {
+    "Linear Webhook Status": {
+      "main": [
+        [
+          { "node": "Respond to Webhook", "type": "main", "index": 0 },
+          { "node": "Filter: Status Changes Only", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Filter: Status Changes Only": {
+      "main": [
+        [
+          { "node": "Format Status Message", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format Status Message": {
+      "main": [
+        [
+          { "node": "Send to Discord bpro-dev", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": {}
+}

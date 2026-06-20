@@ -1,0 +1,115 @@
+{
+  "name": "Linear → Discord (Comments)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "linear-comments",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Linear Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "linear-comments"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {}
+      },
+      "id": "respond-node",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-type",
+              "leftValue": "={{ $json.body.type }}",
+              "rightValue": "Comment",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-node",
+      "name": "Filter: Comments Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst action = body.action; // 'create' or 'update'\nconst data = body.data;\nconst issue = data.issue || {};\n\n// Build issue URL\nconst issueUrl = issue.url || `https://linear.app/bunluxsa/issue/${issue.identifier}`;\nconst issueTitle = issue.title || 'Unknown Issue';\nconst issueId = issue.identifier || issue.id || 'Unknown';\n\n// Comment content\nconst commentBody = data.body || '';\nconst commentUser = data.user?.name || 'Someone';\n\n// Detect if comment contains image URLs\nconst imageRegex = /!\\[.*?\\]\\((https?:\\/\\/[^\\s)]+)\\)/g;\nconst urlRegex = /\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)/g;\n\nlet cleanComment = commentBody;\nconst imageUrls = [];\nconst linkMatches = [];\n\n// Extract images\nlet imgMatch;\nwhile ((imgMatch = imageRegex.exec(commentBody)) !== null) {\n  imageUrls.push(imgMatch[1]);\n  cleanComment = cleanComment.replace(imgMatch[0], `📎 [Image](${imgMatch[1]})`);\n}\n\n// Extract links\nlet linkMatch;\nwhile ((linkMatch = urlRegex.exec(commentBody)) !== null) {\n  linkMatches.push({ text: linkMatch[1], url: linkMatch[2] });\n}\n\n// Remove markdown formatting for display\ncleanComment = cleanComment\n  .replace(/\\*\\*(.+?)\\*\\*/g, '**$1**')\n  .replace(/^#+\\s/gm, '')\n  .trim();\n\n// Truncate if too long\nif (cleanComment.length > 1000) {\n  cleanComment = cleanComment.substring(0, 997) + '...';\n}\n\n// Color: purple (matches TMS Lite brand #7c2dc7)\nconst color = 8073671; // #7B2DC7 in decimal\n\n// Build embed fields\nconst fields = [\n  {\n    name: '🎫 Issue',\n    value: `[${issueId}: ${issueTitle}](${issueUrl})`,\n    inline: false\n  }\n];\n\nif (issue.assignee?.name) {\n  fields.push({\n    name: '👤 Assignee',\n    value: issue.assignee.name,\n    inline: true\n  });\n}\n\nif (issue.state?.name) {\n  fields.push({\n    name: '📊 Status',\n    value: issue.state.name,\n    inline: true\n  });\n}\n\nif (issue.priority !== undefined) {\n  const priorityMap = { 0: 'No Priority', 1: '🔴 Urgent', 2: '🟠 High', 3: '🟡 Medium', 4: '🔵 Low' };\n  fields.push({\n    name: '⚡ Priority',\n    value: priorityMap[issue.priority] || 'Unknown',\n    inline: true\n  });\n}\n\n// Build Discord payload\nconst payload = {\n  embeds: [\n    {\n      author: {\n        name: `💬 ${commentUser} commented`\n      },\n      description: cleanComment || '*(empty comment)*',\n      color: color,\n      fields: fields,\n      footer: {\n        text: `Linear • ${action === 'create' ? 'New Comment' : 'Comment Updated'}`\n      },\n      timestamp: new Date().toISOString()\n    }\n  ]\n};\n\n// If there's an image, add it to embed\nif (imageUrls.length > 0) {\n  payload.embeds[0].image = { url: imageUrls[0] };\n  // If more than 1 image, mention in footer\n  if (imageUrls.length > 1) {\n    payload.embeds[0].footer.text += ` • ${imageUrls.length} images attached`;\n  }\n}\n\nreturn { payload: JSON.stringify(payload) };\n"
+      },
+      "id": "format-comment-node",
+      "name": "Format Comment Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discordapp.com/api/webhooks/1517884740261249055/B1fqjHZbmKR-IZPz0yPBO4hpVip5vEk4lAxYGja5qkNw4Kjv9zd43PhXrwznaaAiYWyB",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "discord-comment-node",
+      "name": "Send to Discord bproteam",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 360]
+    }
+  ],
+  "connections": {
+    "Linear Webhook": {
+      "main": [
+        [
+          { "node": "Respond to Webhook", "type": "main", "index": 0 },
+          { "node": "Filter: Comments Only", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Filter: Comments Only": {
+      "main": [
+        [
+          { "node": "Format Comment Message", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format Comment Message": {
+      "main": [
+        [
+          { "node": "Send to Discord bproteam", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": {}
+}
